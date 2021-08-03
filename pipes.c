@@ -12,15 +12,15 @@
 #define BUFFER 20
 
 
-void checkPrime(char* número)
+void checkPrime(char* numero) //função de checar se o número é primo
 {
 	int i=0;    
-	int n = atoi(número);
+	int n = atoi(numero);
 	for (i=2;i<=n/2;i++)
 	{
 		if(n%i==0)
 		{
-			printf("Numero nao e primo\n");
+			printf("Numero nao e primo: '%s'\n",numero);
 			return;
 		}
 	}
