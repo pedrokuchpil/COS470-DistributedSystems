@@ -20,11 +20,11 @@ void checkPrime(char* numero) //função de checar se o número é primo
 	{
 		if(n%i==0)
 		{
-			printf("O Número %s não é primo.\n",numero);
+			printf("Número não é primo\n");
 			return;
 		}
 	}
-	printf ("O Número %s é primo.\n",numero);
+	printf ("Número é primo\n");
 	return;
 }
 
