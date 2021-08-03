@@ -7,30 +7,13 @@
 #include <unistd.h>
 #include <stdbool.h>
 #include <time.h>
+#include"../lib/lib.h"
 
 
 #define BUFFER 20
 
-
-void checkPrime(char* numero) //função de checar se o número é primo
-{
-	int i=0;    
-	int n = atoi(numero);
-	for (i=2;i<=n/2;i++)
-	{
-		if(n%i==0)
-		{
-			printf("Número não é primo\n");
-			return;
-		}
-	}
-	printf ("Número é primo\n");
-	return;
-}
-
 int main()
 {
-
     srand(time(NULL));	
 
     int fd[2]; //representação do pipe
@@ -59,10 +42,9 @@ int main()
 
         while (iterations>0) //pra toda iteração roda a soma do anterior co
         {
-            int random = (rand() % 100 + 1);
-            n0 += random;
-            sprintf(n1, "%i", n0);
+            int_to_str(n0, n1); 
             write(fd[1], n1, 21); //escreve no pipe
+            n0 = generateNumber(n0); //gera novo número
             iterations--;
         }
 		printf("Encerramento enviado pelo pai no pipe\n");
@@ -84,8 +66,8 @@ int main()
             }
             else
             {
-            printf("String lida pelo filho no Pipe : '%s' \n", str_recebida);
-            checkPrime(str_recebida);
+                printf("String lida pelo filho no Pipe : '%s' \n", str_recebida);
+                printf("%s\n",checkPrime(str_recebida)); //checa se é primo
             }
         }
         exit(0);        

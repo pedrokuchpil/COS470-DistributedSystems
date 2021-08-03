@@ -2,31 +2,14 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include"../lib/lib.h"
 
 #define BUFFER_SIZE 256
-
-char *checkPrime(char* número)
-{
-	int i=0;    
-	int n = atoi(número); //converte de string pra int
-   if (n == 1)
-   {
-      return "Número enviado não é primo\n";
-   }
-	for (i=2;i<=n/2;i++)
-	{
-		if(n%i==0)
-		{
-			return "Número enviado não é primo\n";
-		}
-	}
-	return "Número enviado é primo\n";
-}
 
 int main(int argc, char *argv[])
 {

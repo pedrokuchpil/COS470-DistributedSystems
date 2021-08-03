@@ -1,37 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
+#include <strings.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <time.h>
+#include"../lib/lib.h"
 
 #define BUFFER_SIZE 256
+#define h_addr h_addr_list[0] //para questões de compatibilidade
 
-void error(const char *msg)
-{
-    perror(msg);
-    exit(0);
-}
-
-int generateNumber(int n)
-{
-    int r = rand()%100 + 1;
-    int result = n+r;
-    return n+r;
-}
-
-char * int_to_str(int num, char *str)
-{
-    if(str == NULL)
-    {
-            return NULL;
-    }
-    sprintf(str, "%d", num);
-    return str;
-}
 
 int main(int argc, char *argv[])
 {
