@@ -10,11 +10,17 @@
 #include <netinet/in.h>
 #include <sys/time.h> //FD_SET, FD_ISSET, FD_ZERO macros
 
+
 #include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
-	
+#include <mutex>
+#include <queue>
+#include <map>
+#include <sstream>
+#include <fstream>
+
 #define TRUE 1
 #define FALSE 0
 #define PORT 8888
@@ -22,12 +28,101 @@
 
 using namespace std;
 
-int server()
+void writeLog(string message)
+{
+    fstream myfile;
+    myfile.open ("console.log",ios_base::app);
+    myfile << message  << endl;
+    myfile.close();
+}
+
+
+class distributedMutex
+{
+	private:
+		mutex remote;
+		queue<tuple<int, int>> mutexQueue;
+		bool Lock = false;
+		map<int, int> granted; //
+
+		void grant()
+		{
+			Lock = true;
+			tuple<int, int> next = mutexQueue.front();
+			mutexQueue.pop();
+			string message = "2";
+			send(get<1>(next), message.c_str(), BUFFER_SIZE, 0);
+			cout << to_string(get<0>(next)) + " 2\n";
+			writeLog(to_string(get<0>(next)) + " 2");
+			if (granted.find(get<0>(next)) == granted.end())
+			{
+				granted[get<0>(next)] = 1;
+			}
+			else
+			{
+				granted[get<0>(next)] += 1;
+			}
+		}
+	public:
+
+		distributedMutex(){};
+
+		void request(int pid, int pfd){
+			remote.lock();
+			cout << to_string(pid) + " 1\n";
+			writeLog(to_string(pid) + " 1");
+			mutexQueue.push(make_tuple(pid, pfd));
+			if (granted.find(pid) == granted.end()){
+				granted[pid] = 0;
+			}
+			if(!Lock){
+				grant();
+			}
+			remote.unlock();
+		}
+
+		void release(string pid){
+			remote.lock();
+			cout << "3" << endl;
+			writeLog(pid + " 3");
+			if (mutexQueue.empty()){
+				Lock = false;
+			}
+			else{
+				grant();
+			}
+			remote.unlock();
+		}
+		
+		void printQueue(){
+			remote.lock();
+			queue<tuple<int, int>> copy = mutexQueue;
+			while (!copy.empty()){
+				cout << get<0>(copy.front()) << " ";
+				copy.pop();
+			}
+			std::cout << std::endl;
+			remote.unlock();
+		}
+		void printCount(){
+				remote.lock();
+				for (auto it = granted.cbegin(); it != granted.cend(); ++it)
+				{
+					std::cout << it->first << " | " << it->second << "\n";
+				}
+				remote.unlock();
+			}
+};
+
+distributedMutex dmutex;
+
+int server(int n_clients)
 {
 	int opt = TRUE;
 	int master_socket , addrlen , new_socket ,
-		max_clients = 30 , activity, i , valread , sd;
+		max_clients = n_clients+1 , activity, i , valread , sd;
 	int max_sd;
+	int manager_socket;
 	struct sockaddr_in address;
 
 	vector<int> client_socket;
@@ -82,7 +177,8 @@ int server()
 	//accept the incoming connection
 	addrlen = sizeof(address);
 	puts("Waiting for connections ...");
-		
+	
+	int n_processes_finished = 0;
 	while(TRUE)
 	{
 		//clear the socket set
@@ -153,7 +249,7 @@ int server()
 			{
 				//Check if it was for closing , and also read the
 				//incoming message
-				if ((valread = read( sd , buffer, 1024)) == 0)
+				if ((valread = read( sd , buffer, BUFFER_SIZE)) == 0)
 				{
 					//Somebody disconnected , get his details and print
 					getpeername(sd , (struct sockaddr*)&address , \
@@ -164,24 +260,134 @@ int server()
 					//Close the socket and mark as 0 in list for reuse
 					close( sd );
 					client_socket[i] = 1;
+					n_processes_finished++;
 				}
 					
 				//Processar mensagem recebida
 				else
 				{
 					string received(buffer);
-					string answer = "Recebi " + received;
-					send(sd , answer.c_str() , BUFFER_SIZE , 0 );
+					//establish manager socket
+					if (received.find("manager")!= string::npos)
+					{
+						manager_socket = sd;
+					}
+					else
+					//send received message to manager
+					{
+						string str_socket = to_string(sd);
+						string answer = received + "|" + str_socket;						
+						send(manager_socket , answer.c_str() , BUFFER_SIZE , 0 );
+					}
 				}
 			}
+		}
+		if (n_processes_finished >= 10)
+		{
+			break;
 		}
 	}
 	return 0;
 }
-	
+
+int manager(int n_processes, int repetitions)
+{
+	int server_sock = 0, n;
+    struct sockaddr_in serv_addr;
+
+    if ((server_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        printf("\n Socket creation error \n");
+        return -1;
+    }
+   
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
+       
+    // Convert IPv4 and IPv6 addresses from text to binary form
+    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0) 
+    {
+        printf("\nInvalid address/ Address not supported \n");
+        return -1;
+    }
+
+    if (connect(server_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    {
+        printf("\nConnection Failed \n");
+        return -1;
+    }
+
+	string str_manager = "manager";
+
+	n = send(server_sock , str_manager.c_str(), BUFFER_SIZE, 0);
+		if (n < 0)
+		{
+			printf("Erro escrevendo no socket");
+			exit(1);
+		} 
+	char buffer[BUFFER_SIZE];
+	int count = 0;
+	while(TRUE)
+	{
+		n = read( server_sock , buffer, BUFFER_SIZE);
+		if (n < 0)
+		{
+			printf("Erro lendo do socket");
+			exit(1);
+		}
+		string server_response(buffer);
+		cout << server_response << endl;
+		stringstream test(server_response);
+		string segment;
+		vector<string> seglist;
+
+		while(getline(test, segment, '|'))
+		{
+			seglist.push_back(segment);
+		}
+		if (seglist[0] == "1")
+		{
+			cout << seglist[2] << endl;
+			dmutex.request(stoi(seglist[1]),stoi(seglist[2]));
+		}
+		else if (seglist[0] == "3")
+		{
+			cout << seglist[2] << endl;
+			dmutex.release(seglist[1]);
+		}
+		count++;
+	}
+	close(server_sock);
+	return 0;
+}
+
+void terminal(){
+	while (true){
+		int var;
+		cin >> var;
+		if (var == 1)
+		{
+			dmutex.printQueue();
+		}
+		else if(var == 2){
+			dmutex.printCount();
+		}
+		else if(var == 3) {
+			return;
+		}
+		else{
+			cout<<"Entrada inválida ";
+		}
+	}
+}
+
 int main(int argc , char *argv[])
 {
-	thread server_t (server);
+	int n = atoi(argv[1]);
+	int r = atoi(argv[2]);
+	thread server_t (server,n);
+	thread manager_t (manager,n,r);
     server_t.join();
+	manager_t.join();
 	return 0;
 }
