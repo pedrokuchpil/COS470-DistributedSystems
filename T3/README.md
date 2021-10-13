@@ -1,0 +1,1 @@
+Para rodar o trabalho, execute o script run_coordinator.sh e run_clients.sh, nessa ordem. Após isso, encerre o coordenador com um SIGINT.
