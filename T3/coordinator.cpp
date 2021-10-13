@@ -37,90 +37,75 @@ void writeLog(string message)
 }
 
 
-class distributedMutex
+class centralizedMutex
 {
-	private:
-		mutex remote;
-		queue<tuple<int, int>> mutexQueue;
-		bool Lock = false;
-		map<int, int> granted; //
+	mutex remote;
+	queue<pair<string, int>> q;
+	bool lock = false;
+	map<string, int> granted; //
 
-		void grant()
+	void grant()
+	{
+		lock = true;
+		pair<string, int> next = q.front();
+		q.pop();
+		string message = "2";
+		//envia GRANT ao processo
+		send(get<1>(next), message.c_str(), BUFFER_SIZE, 0);
+		//cout << to_string(get<0>(next)) + " 2\n";
+		writeLog(get<0>(next) + " 2");
+		if (granted.find(get<0>(next)) == granted.end())
 		{
-			Lock = true;
-			tuple<int, int> next = mutexQueue.front();
-			mutexQueue.pop();
-			string message = "2";
-			send(get<1>(next), message.c_str(), BUFFER_SIZE, 0);
-			cout << to_string(get<0>(next)) + " 2\n";
-			writeLog(to_string(get<0>(next)) + " 2");
-			if (granted.find(get<0>(next)) == granted.end())
-			{
-				granted[get<0>(next)] = 1;
-			}
-			else
-			{
-				granted[get<0>(next)] += 1;
-			}
+			granted[get<0>(next)] = 1;
 		}
+		else
+		{
+			granted[get<0>(next)] += 1;
+		}
+	}
+	
 	public:
-
-		distributedMutex(){};
-
-		void request(int pid, int pfd){
+		centralizedMutex(){};
+		void request(string pid, int n_socket)
+		{
 			remote.lock();
-			cout << to_string(pid) + " 1\n";
-			writeLog(to_string(pid) + " 1");
-			mutexQueue.push(make_tuple(pid, pfd));
-			if (granted.find(pid) == granted.end()){
+			//cout << to_string(pid) + " 1\n";
+			writeLog(pid + " 1");
+			q.push(make_pair(pid, n_socket));
+			if (granted.find(pid) == granted.end())
+			{
 				granted[pid] = 0;
 			}
-			if(!Lock){
+			if(!lock)
+			{
 				grant();
 			}
 			remote.unlock();
 		}
 
-		void release(string pid){
+		void release(string pid)
+		{
 			remote.lock();
-			cout << "3" << endl;
+			//cout << "3" << endl;
 			writeLog(pid + " 3");
-			if (mutexQueue.empty()){
-				Lock = false;
+			if (q.empty())
+			{
+				lock = false;
 			}
 			else{
 				grant();
 			}
 			remote.unlock();
 		}
-		
-		void printQueue(){
-			remote.lock();
-			queue<tuple<int, int>> copy = mutexQueue;
-			while (!copy.empty()){
-				cout << get<0>(copy.front()) << " ";
-				copy.pop();
-			}
-			std::cout << std::endl;
-			remote.unlock();
-		}
-		void printCount(){
-				remote.lock();
-				for (auto it = granted.cbegin(); it != granted.cend(); ++it)
-				{
-					std::cout << it->first << " | " << it->second << "\n";
-				}
-				remote.unlock();
-			}
 };
 
-distributedMutex dmutex;
+centralizedMutex cmutex;
 
-int server(int n_clients)
+int server()
 {
 	int opt = TRUE;
 	int master_socket , addrlen , new_socket ,
-		max_clients = n_clients+1 , activity, i , valread , sd;
+		max_clients = 129 , activity, i , valread , sd;
 	int max_sd;
 	int manager_socket;
 	struct sockaddr_in address;
@@ -132,21 +117,20 @@ int server(int n_clients)
 	//set of socket descriptors
 	fd_set readfds;
 			
-	//initialise all client_socket[] to 0 so not checked
+	//inicia client_socket[] em 0
 	for (i = 0; i < max_clients; i++)
 	{
 		client_socket.push_back(0);
 	}
 		
-	//create a master socket
+	//cria master socket
 	if( (master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0)
 	{
 		perror("socket failed");
 		exit(EXIT_FAILURE);
 	}
 	
-	//set master socket to allow multiple connections ,
-	//this is just a good habit, it will work without this
+	//master socket para permitir multiplas conexões
 	if( setsockopt(master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
 		sizeof(opt)) < 0 )
 	{
@@ -154,57 +138,55 @@ int server(int n_clients)
 		exit(EXIT_FAILURE);
 	}
 	
-	//type of socket created
+	//tipo de socket criado
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = INADDR_ANY;
 	address.sin_port = htons( PORT );
 		
-	//bind the socket to localhost port 8888
+	//binda o socket em localhost na porta 8888
 	if (bind(master_socket, (struct sockaddr *)&address, sizeof(address))<0)
 	{
 		perror("bind failed");
 		exit(EXIT_FAILURE);
 	}
-	printf("Listener on port %d \n", PORT);
+	//printf("Listener on port %d \n", PORT);
 		
-	//try to specify maximum of 3 pending connections for the master socket
+	//maximo de 3 conexões pendentes para o master socket
 	if (listen(master_socket, 3) < 0)
 	{
 		perror("listen");
 		exit(EXIT_FAILURE);
 	}
 		
-	//accept the incoming connection
+	//aceita a conexão
 	addrlen = sizeof(address);
-	puts("Waiting for connections ...");
+	//puts("Waiting for connections ...");
 	
-	int n_processes_finished = 0;
 	while(TRUE)
 	{
-		//clear the socket set
+		//limpa o set de sockets
 		FD_ZERO(&readfds);
 	
-		//add master socket to set
+		//adiciona master socket a set
 		FD_SET(master_socket, &readfds);
 		max_sd = master_socket;
 			
-		//add child sockets to set
+		//adiciona child sockets ao set
 		for ( i = 0 ; i < max_clients ; i++)
 		{
 			//socket descriptor
 			sd = client_socket[i];
 				
-			//if valid socket descriptor then add to read list
+			//se socket descriptor é valido, adicionar na read list
 			if(sd > 0)
 				FD_SET( sd , &readfds);
 				
-			//highest file descriptor number, need it for the select function
+			//necessario para o select
 			if(sd > max_sd)
 				max_sd = sd;
 		}
 	
-		//wait for an activity on one of the sockets , timeout is NULL ,
-		//so wait indefinitely
+		//espera por uma atividade em um dos sockets
 		activity = select( max_sd + 1 , &readfds , NULL , NULL , NULL);
 	
 		if ((activity < 0) && (errno!=EINTR))
@@ -212,8 +194,7 @@ int server(int n_clients)
 			printf("select error");
 		}
 			
-		//If something happened on the master socket ,
-		//then its an incoming connection
+		//Se é no master socket, então é uma nova conexão
 		if (FD_ISSET(master_socket, &readfds))
 		{
 			if ((new_socket = accept(master_socket,
@@ -223,57 +204,52 @@ int server(int n_clients)
 				exit(EXIT_FAILURE);
 			}
 			
-			//inform user of socket number - used in send and receive commands
-			printf("New connection , socket fd is %d , ip is : %s , port : %d\n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+			//printf("New connection , socket fd is %d , ip is : %s , port : %d\n" , new_socket , inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
 				
-			//add new socket to array of sockets
+			//adciona novo socket na array de sockets
 			for (i = 0; i < max_clients; i++)
 			{
-				//if position is empty
 				if( client_socket[i] == 0 )
 				{
 					client_socket[i] = new_socket;
-					printf("Adding to list of sockets as %d\n" , i);
+					//printf("Adding to list of sockets as %d\n" , i);
 						
 					break;
 				}
 			}
 		}
 			
-		//else its some IO operation on some other socket
+		//se não, é algo acontecendo em um dos outros sockets
 		for (i = 0; i < max_clients; i++)
 		{
 			sd = client_socket[i];
 				
 			if (FD_ISSET( sd , &readfds))
 			{
-				//Check if it was for closing , and also read the
-				//incoming message
+				//lê a mensagem e verifica se esta fechando conexão
 				if ((valread = read( sd , buffer, BUFFER_SIZE)) == 0)
 				{
-					//Somebody disconnected , get his details and print
 					getpeername(sd , (struct sockaddr*)&address , \
 						(socklen_t*)&addrlen);
-					printf("Host disconnected , ip %s , port %d \n" ,
-						inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
+					//printf("Host disconnected , ip %s , port %d \n" ,
+						//inet_ntoa(address.sin_addr) , ntohs(address.sin_port));
 						
-					//Close the socket and mark as 0 in list for reuse
+					//Fecha o socket e marca como 0 para reuso
 					close( sd );
-					client_socket[i] = 1;
-					n_processes_finished++;
+					client_socket[i] = 0;
 				}
 					
 				//Processar mensagem recebida
 				else
 				{
 					string received(buffer);
-					//establish manager socket
+					//mensagem que estabelece o socket do manager
 					if (received.find("manager")!= string::npos)
 					{
 						manager_socket = sd;
 					}
 					else
-					//send received message to manager
+					//envia mensagem recebida ao manager
 					{
 						string str_socket = to_string(sd);
 						string answer = received + "|" + str_socket;						
@@ -282,16 +258,13 @@ int server(int n_clients)
 				}
 			}
 		}
-		if (n_processes_finished >= 10)
-		{
-			break;
-		}
 	}
 	return 0;
 }
 
-int manager(int n_processes, int repetitions)
+int manager()
 {
+	//identico ao cliente
 	int server_sock = 0, n;
     struct sockaddr_in serv_addr;
 
@@ -304,7 +277,6 @@ int manager(int n_processes, int repetitions)
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(PORT);
        
-    // Convert IPv4 and IPv6 addresses from text to binary form
     if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0) 
     {
         printf("\nInvalid address/ Address not supported \n");
@@ -318,7 +290,7 @@ int manager(int n_processes, int repetitions)
     }
 
 	string str_manager = "manager";
-
+	//envia mensagem se identificando como manager
 	n = send(server_sock , str_manager.c_str(), BUFFER_SIZE, 0);
 		if (n < 0)
 		{
@@ -329,6 +301,7 @@ int manager(int n_processes, int repetitions)
 	int count = 0;
 	while(TRUE)
 	{
+		//lê mensagem do servidor
 		n = read( server_sock , buffer, BUFFER_SIZE);
 		if (n < 0)
 		{
@@ -336,7 +309,7 @@ int manager(int n_processes, int repetitions)
 			exit(1);
 		}
 		string server_response(buffer);
-		cout << server_response << endl;
+		//cout << server_response << endl;
 		stringstream test(server_response);
 		string segment;
 		vector<string> seglist;
@@ -345,48 +318,26 @@ int manager(int n_processes, int repetitions)
 		{
 			seglist.push_back(segment);
 		}
-		if (seglist[0] == "1")
+		if (seglist[0] == "1") //se REQUEST
 		{
-			cout << seglist[2] << endl;
-			dmutex.request(stoi(seglist[1]),stoi(seglist[2]));
+			//cout << seglist[2] << endl;
+			cmutex.request(seglist[1],stoi(seglist[2]));
 		}
-		else if (seglist[0] == "3")
+		else if (seglist[0] == "3") //se RELEASE
 		{
-			cout << seglist[2] << endl;
-			dmutex.release(seglist[1]);
+			//cout << seglist[2] << endl;
+			cmutex.release(seglist[1]);
 		}
-		count++;
 	}
 	close(server_sock);
 	return 0;
 }
 
-void terminal(){
-	while (true){
-		int var;
-		cin >> var;
-		if (var == 1)
-		{
-			dmutex.printQueue();
-		}
-		else if(var == 2){
-			dmutex.printCount();
-		}
-		else if(var == 3) {
-			return;
-		}
-		else{
-			cout<<"Entrada inválida ";
-		}
-	}
-}
 
 int main(int argc , char *argv[])
 {
-	int n = atoi(argv[1]);
-	int r = atoi(argv[2]);
-	thread server_t (server,n);
-	thread manager_t (manager,n,r);
+	thread server_t (server);
+	thread manager_t (manager);
     server_t.join();
 	manager_t.join();
 	return 0;

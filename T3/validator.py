@@ -7,10 +7,10 @@ def validate_number_of_lines(r, n, path):
 
     if len(lines) == expected_number_of_lines:
         print(
-            f"Número de linhas do teste com r =  {r}, com n = {n} foi correto e igual a {expected_number_of_lines}.")
+            f"OK. Número de linhas do teste com r =  {r}, com n = {n} igual a {expected_number_of_lines}.")
     else:
         print(
-            f"Número de linhas do teste com r = {r}, com n = {n} foi errôneo e igual a {len(lines)}, não {expected_number_of_lines}.")
+            f"ERRO. Número de linhas do teste com r = {r}, com n = {n} igual a {len(lines)} e não {expected_number_of_lines}")
 
 
 def validate_number_of_writes(path, n, r):
@@ -26,9 +26,9 @@ def validate_number_of_writes(path, n, r):
             processes[pid] = 1
     for k,v in processes.items():
         if v != r :
-            print (f"Número de escritas {v} do processo {k} não confere com o número esperado {r}")
+            print (f"ERRO. Número de escritas {v} do processo {k} é diferente de {r}")
             return 1
-    print (f"Tá tudo certo, numero de escritas {v} = numero esperado {r}")
+    print (f"OK. Número de escritas por processo {v} é igual ao número esperado {r}")
     return 0
 
 
@@ -39,10 +39,10 @@ def validate_increasing(path):
     for l in lines:
         new = int(l.split('|')[0])
         if new < last:
-            print(f"Os valores não estão respeitando a ordem cronológica do sistema. linha")
+            print(f"ERRO. Os valores não respeitam a ordem de evolução do relógio do sistema")
             return
         last = new
-    print(f"Os valores estão respeitando a ordem cronológica do sistema.")
+    print(f"OK. Os valores respeitam a ordem de evolução do relógio do sistema")
 
 
 def validate_execution(path):
@@ -58,30 +58,26 @@ def validate_execution(path):
             requests.append(int(splt[0]))
         else:
             if int(splt[0]) != requests[0] or int(splt[0]) != last_granted:
-                print(f"O coordenador apresentou um problema de concorrência {l}")
+                print(f"ERRO. O log gerado pelo coordenador não está correto")
                 return
             requests = requests[1:]
-    print("Não ocorreram problemas de concorrência pelo coordenador.")
+    print("OK. O log gerado pelo coordenador está correto")
 
 
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('r', type=int, help='r')
+parser.add_argument('n', type=int, help='n')
+parser.add_argument('coordpath', help='coordpath')
+parser.add_argument('resultpath', help='resultpath')
+args = parser.parse_args()
 
+r = args.r
+n = args.n
+coordpath = args.coordpath
+resultpath = args.resultpath
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('r', type=int, help='r')
-    parser.add_argument('n', type=int, help='n')
-    parser.add_argument('coordpath', help='coordpath')
-    parser.add_argument('resultpath', help='resultpath')
-    args = parser.parse_args()
-
-    r = args.r
-    n = args.n
-    coordpath = args.coordpath
-    resultpath = args.resultpath
-
-    validate_number_of_lines(r, n, resultpath)
-    validate_number_of_writes(resultpath, n, r)
-    validate_increasing(resultpath)
-    validate_execution(coordpath)
+validate_number_of_lines(r, n, resultpath)
+validate_number_of_writes(resultpath, n, r)
+validate_increasing(resultpath)
+validate_execution(coordpath)
 
